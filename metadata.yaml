@@ -1,5 +1,5 @@
 name: astrbot_plugin_tts_llm
 author: clown145
 description: 一个基于Genie的tts插件(目前只能合成日语)，可以注册感情，可以自动识别感情进行语音合成，可以使用抱脸的免费算力进行推理(较慢)。
-version: 1.2.0
+version: 1.2.1
 repo: "https://github.com/clown145/astrbot_plugin_tts_llm"

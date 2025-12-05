@@ -1,5 +1,6 @@
 import asyncio
 import httpx
+import os
 import re
 from typing import Dict, Optional, Set
 
@@ -19,7 +20,7 @@ from .external_apis import translate_text
     "astrbot_plugin_tts_llm",
     "clown145",
     "一个通过LLM、翻译和TTS实现语音合成的插件",
-    "1.2.0",
+    "1.2.1",
     "https://github.com/clown145/astrbot_plugin_tts_llm",
 )
 class LlmTtsPlugin(Star):
@@ -30,6 +31,8 @@ class LlmTtsPlugin(Star):
         self.w_active_sessions: Set[str] = set()
         self.session_emotions: Dict[str, Dict[str, str]] = {}
         self.session_w_settings: Dict[str, Dict[str, str]] = {}
+        self._keepalive_stop_event = asyncio.Event()
+        self._keepalive_task: Optional[asyncio.Task] = None
 
         # 初始化辅助模块
         plugin_data_dir = StarTools.get_data_dir("astrbot_plugin_tts_llm")
@@ -38,8 +41,47 @@ class LlmTtsPlugin(Star):
         
         self.http_client = httpx.AsyncClient(timeout=300.0)
         self.tts_engine = TTSEngine(self.config, self.http_client)
-        
+
+        if self.config.get("enable_space_keepalive"):
+            self._keepalive_task = asyncio.create_task(self._keep_alive_loop())
+
         logger.info("LLM TTS 插件已加载。")
+
+    def _get_keepalive_url(self) -> Optional[str]:
+        """获取用于保活的目标地址，优先使用独立配置，否则回落到第一个TTS服务器。"""
+
+        custom_url = self.config.get("space_keepalive_url")
+        if custom_url:
+            return custom_url.rstrip("/")
+
+        servers = self.config.get("tts_servers", [])
+        if servers:
+            return servers[0].rstrip("/")
+
+        return None
+
+    async def _keep_alive_loop(self):
+        """定时ping Hugging Face Space 以避免因长时间无人访问而休眠。"""
+
+        interval_minutes = max(int(self.config.get("space_keepalive_interval_minutes", 25)), 1)
+
+        while not self._keepalive_stop_event.is_set():
+            target_url = self._get_keepalive_url()
+            if not target_url:
+                logger.warning("未找到可用于保活的空间地址，已跳过保活任务。")
+                await asyncio.wait_for(self._keepalive_stop_event.wait(), timeout=interval_minutes * 60)
+                continue
+
+            try:
+                response = await self.http_client.get(target_url, timeout=30)
+                logger.info(f"保活请求已发送到 {target_url}，状态码: {response.status_code}")
+            except Exception as exc:
+                logger.warning(f"向 {target_url} 发送保活请求失败: {exc}")
+
+            try:
+                await asyncio.wait_for(self._keepalive_stop_event.wait(), timeout=interval_minutes * 60)
+            except asyncio.TimeoutError:
+                continue
 
     @filter.command("注册感情")
     async def register_emotion_command(
@@ -259,5 +301,9 @@ class LlmTtsPlugin(Star):
 
     async def terminate(self):
         """插件卸载/停用时关闭http客户端"""
+        self._keepalive_stop_event.set()
+        if self._keepalive_task:
+            await asyncio.gather(self._keepalive_task, return_exceptions=True)
+
         await self.http_client.aclose()
         logger.info("LLM TTS 插件已卸载，HTTP客户端已关闭。")
