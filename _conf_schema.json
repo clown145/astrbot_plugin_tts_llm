@@ -62,6 +62,22 @@
       "https://your-name-your-space.hf.space"
     ]
   },
+  "enable_space_keepalive": {
+    "type": "bool",
+    "description": "是否自动定期访问 Hugging Face Space 以防止休眠",
+    "default": false,
+    "hint": "仅在使用 Hugging Face Space 时启用，避免无效的保活请求。"
+  },
+  "space_keepalive_url": {
+    "type": "string",
+    "description": "保活请求的目标地址（默认使用第一个TTS服务器地址）"
+  },
+  "space_keepalive_interval_minutes": {
+    "type": "int",
+    "description": "两次保活之间的间隔分钟数",
+    "default": 25,
+    "hint": "Hugging Face Space 默认24小时不访问会休眠，建议设置在15-30分钟内。"
+  },
   "enable_sentence_splitting": {
     "type": "bool",
     "description": "是否启用句子切分功能以加速长文本合成",
