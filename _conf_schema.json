@@ -74,13 +74,13 @@
       "llm_emotion_prompt": {
         "description": "情感注入提示词模板",
         "type": "text",
-        "default": "请在回复中包含情感标签。\n情感标签格式：[emotion=情感名]，例如 [emotion=开心]。\n可选的情感有：{emotions}。\n请将情感标签紧随回复主体之后或位于句首。",
+        "default": "## 情感标签生成\n请在回复中包含情感标签。\n情感标签格式：[emotion=情感名]，例如 [emotion=开心]。\n可选的情感有：{emotions}。\n请将情感标签紧随回复主体之后或位于句首。",
         "hint": "{emotions} 会被自动替换为当前角色可用的情感列表。"
       },
       "llm_translation_prompt": {
         "description": "翻译注入提示词模板",
         "type": "text",
-        "default": "请在回复中包含日语翻译。\n日语翻译格式：$日语内容$，例如 $こんにちは$。\n请将翻译内容紧随回复主体之后。"
+        "default": "## 日语翻译生成\n请在回复中包含日语翻译。\n翻译内容必须严格包裹在 $ 符号中，格式：$日语内容$。\n例如：$こんにちは$。\n请将翻译内容紧随回复主体之后。"
       },
       "use_astrbot_provider": {
         "description": "使用 AstrBot 框架内的模型进行翻译",

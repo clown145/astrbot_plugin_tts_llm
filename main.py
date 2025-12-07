@@ -20,7 +20,7 @@ from .external_apis import translate_text
     "astrbot_plugin_tts_llm",
     "clown145",
     "一个通过LLM、翻译和TTS实现语音合成的插件",
-    "1.3.0",
+    "1.3.1",
     "https://github.com/clown145/astrbot_plugin_tts_llm",
 )
 class LlmTtsPlugin(Star):
@@ -339,6 +339,11 @@ class LlmTtsPlugin(Star):
         if not original_text:
             return
 
+        # 0. 清理可能存在的幻觉报错 (防止LLM复读之前的错误提示)
+        original_text = original_text.replace("(TTS失败: 翻译无结果)", "")
+        original_text = original_text.replace("(TTS合成失败)", "")
+        original_text = original_text.replace("(TTS失败: 角色", "") # 模糊匹配
+
         # 检查是否开启了TTS (个人会话 或 群组)
         is_active = (session_id in self.active_sessions or 
                      session_id in self.w_active_sessions or 
@@ -359,8 +364,9 @@ class LlmTtsPlugin(Star):
             # 从原文中移除标签，保持回复干净
             original_text = original_text.replace(emotion_match.group(0), "")
 
-        # 2. 提取翻译内容 $xxx$
-        translation_match = re.search(r'\$(.*?)\$', original_text, re.DOTALL)
+        # 2. 提取翻译内容 $xxx$ 或 ＄xxx＄
+        # 兼容全角符号，且支持多行匹配
+        translation_match = re.search(r'[\\$＄](.*?)[\\$＄]', original_text, re.DOTALL)
         injected_translation = None
         if translation_match:
             injected_translation = translation_match.group(1).strip()
