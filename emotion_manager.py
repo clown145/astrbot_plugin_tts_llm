@@ -4,6 +4,7 @@ from typing import Dict, Optional
 
 from astrbot.api import logger
 
+
 class EmotionManager:
     """处理所有与感情数据相关的加载、保存和管理逻辑"""
 
@@ -46,7 +47,9 @@ class EmotionManager:
         """从文件重新加载数据，用于在保存失败时恢复状态"""
         self.emotions_data = self._load_emotions_from_file()
 
-    def get_emotion_data(self, character_name: str, emotion_name: str) -> Optional[Dict]:
+    def get_emotion_data(
+        self, character_name: str, emotion_name: str
+    ) -> Optional[Dict]:
         """获取指定角色和感情的数据"""
         return self.emotions_data.get(character_name, {}).get(emotion_name)
 
@@ -54,7 +57,14 @@ class EmotionManager:
         """检查角色是否存在"""
         return character_name in self.emotions_data
 
-    def register_emotion(self, character_name: str, emotion_name: str, ref_audio_path: str, ref_audio_text: str, language: str = None) -> bool:
+    def register_emotion(
+        self,
+        character_name: str,
+        emotion_name: str,
+        ref_audio_path: str,
+        ref_audio_text: str,
+        language: str = None,
+    ) -> bool:
         """注册一个新的感情并保存"""
         if character_name not in self.emotions_data:
             self.emotions_data[character_name] = {}
@@ -72,7 +82,7 @@ class EmotionManager:
     def delete_emotion(self, character_name: str, emotion_name: str) -> bool:
         """删除一个已注册的感情并保存"""
         if not self.get_emotion_data(character_name, emotion_name):
-            return True # 如果不存在，也视为成功
+            return True  # 如果不存在，也视为成功
 
         del self.emotions_data[character_name][emotion_name]
         if not self.emotions_data[character_name]:
