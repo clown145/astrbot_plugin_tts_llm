@@ -36,6 +36,7 @@ async def translate_text(
         "Content-Type": "application/json",
     }
 
+    response: Optional[httpx.Response] = None
     try:
         if api_format == "openai":
             payload = {
@@ -69,7 +70,8 @@ async def translate_text(
             return data["candidates"][0]["content"]["parts"][0]["text"]
 
     except Exception as e:
-        logger.error(f"翻译请求失败: {e}\n响应: {getattr(response, 'text', 'N/A')}")
+        response_text = response.text if response is not None else "N/A"
+        logger.error(f"翻译请求失败: {e}\n响应: {response_text}")
         return None
 
     return None

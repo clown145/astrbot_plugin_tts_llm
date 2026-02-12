@@ -19,6 +19,11 @@ SAMPLE_RATE = 32000
 class TTSEngine:
     """处理所有与TTS合成相关的核心逻辑，包括文本分块、并发合成和音频合并"""
 
+    DEFAULT_TTS_CLEAN_REGEX = (
+        r"\([^()]*\)|（[^（）]*）|\[[^\[\]]*\]|【[^【】]*】|\{[^{}]*\}|｛[^｛｝]*｝|<[^<>]*>|《[^《》]*》"
+    )
+    MAX_TTS_CLEAN_ROUNDS = 10
+
     def __init__(
         self,
         config: AstrBotConfig,
@@ -42,6 +47,24 @@ class TTSEngine:
 
         # 启动清理任务
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+
+    def _clean_text_for_tts(self, text: str) -> str:
+        cleaned = text
+
+        pattern = self.config.get("tts_text_clean_regex", self.DEFAULT_TTS_CLEAN_REGEX)
+        if isinstance(pattern, str) and pattern:
+            try:
+                # Run multiple rounds so nested brackets can also be cleaned.
+                for _ in range(self.MAX_TTS_CLEAN_ROUNDS):
+                    updated = re.sub(pattern, "", cleaned)
+                    if updated == cleaned:
+                        break
+                    cleaned = updated
+            except re.error as exc:
+                logger.warning(f"文本清洗正则无效，已跳过: {pattern} ({exc})")
+
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
 
     async def _cleanup_loop(self):
         """定期清理过期的临时音频文件"""
@@ -68,6 +91,12 @@ class TTSEngine:
 
             except Exception as e:
                 logger.error(f"清理任务发生错误: {e}")
+
+    async def terminate(self):
+        """在插件卸载时停止后台清理任务。"""
+        if self._cleanup_task:
+            self._cleanup_task.cancel()
+            await asyncio.gather(self._cleanup_task, return_exceptions=True)
 
     def _split_text_into_chunks(self, text: str, sentences_per_chunk: int) -> list[str]:
         """根据标点将文本切分为句子，再按指定数量合并成块"""
@@ -309,9 +338,22 @@ class TTSEngine:
                 logger.error(f"[{session_id_for_log}] 未配置TTS服务器。")
                 return None
 
+            text_for_tts = text
+            if self.config.get("enable_tts_text_cleaning", False):
+                text_for_tts = self._clean_text_for_tts(text)
+                if text_for_tts != text:
+                    logger.info(
+                        f"[{session_id_for_log}] TTS文本已清洗: '{text[:30]}' -> '{text_for_tts[:30]}'"
+                    )
+                if not text_for_tts:
+                    logger.warning(
+                        f"[{session_id_for_log}] TTS文本清洗后为空，跳过合成。"
+                    )
+                    return None
+
             if self.config.get("enable_sentence_splitting", False):
                 sentences_per_chunk = self.config.get("sentences_per_chunk", 2)
-                text_chunks = self._split_text_into_chunks(text, sentences_per_chunk)
+                text_chunks = self._split_text_into_chunks(text_for_tts, sentences_per_chunk)
 
                 if len(text_chunks) > 1:
                     task_queue = asyncio.Queue()
@@ -383,7 +425,7 @@ class TTSEngine:
                     character_name=character_name,
                     ref_audio_path=ref_audio_path,
                     ref_audio_text=ref_audio_text,
-                    text=text,
+                    text=text_for_tts,
                     session_id_for_log=session_id_for_log,
                     language=language,
                 )

@@ -57,6 +57,18 @@
     "type": "bool",
     "default": true
   },
+  "enable_tts_text_cleaning": {
+    "title": "启用 TTS 文本清洗",
+    "description": "在请求 TTS 前按正则清洗文本（例如去掉括号内容）。",
+    "type": "bool",
+    "default": false
+  },
+  "tts_text_clean_regex": {
+    "title": "TTS 清洗正则",
+    "description": "用于 TTS 前文本清洗的正则表达式。默认删除括号及其中内容。",
+    "type": "string",
+    "default": "\\([^()]*\\)|（[^（）]*）|\\[[^\\[\\]]*\\]|【[^【】]*】|\\{[^{}]*\\}|｛[^｛｝]*｝|<[^<>]*>|《[^《》]*》"
+  },
   "tts_timeout_seconds": {
     "title": "⏱️ TTS 超时时间（秒）",
     "description": "单次 TTS 请求的超时时间。超时后将跳过该请求并尝试下一个服务器。建议设置为 60-300 秒。",

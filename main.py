@@ -20,7 +20,7 @@ from .external_apis import translate_text
     "astrbot_plugin_tts_llm",
     "clown145",
     "一个通过LLM、翻译和TTS实现语音合成的插件",
-    "1.3.4",
+    "1.3.5",
     "https://github.com/clown145/astrbot_plugin_tts_llm",
 )
 class LlmTtsPlugin(Star):
@@ -487,14 +487,19 @@ class LlmTtsPlugin(Star):
             # 从原文中移除标签，保持回复干净
             original_text = original_text.replace(emotion_match.group(0), "")
 
-        # 2. 提取翻译内容 $xxx$ 或 ＄xxx＄
-        # 兼容全角符号，且支持多行匹配
-        translation_match = re.search(r"[\\$＄](.*?)[\\$＄]", original_text, re.DOTALL)
         injected_translation = None
-        if translation_match:
-            injected_translation = translation_match.group(1).strip()
-            # 从原文中移除翻译，保持回复干净
-            original_text = original_text.replace(translation_match.group(0), "")
+        # 2. 提取翻译内容（仅在开启 LLM 翻译注入时处理）
+        # 仅匹配显式标记，避免误删普通文本中的反斜杠/金额符号等内容。
+        if enable_llm_translation:
+            translation_match = re.search(
+                r"(?:\$(.+?)\$|\uFF04(.+?)\uFF04)\s*$", original_text, re.DOTALL
+            )
+            if translation_match:
+                injected_translation = (
+                    translation_match.group(1) or translation_match.group(2) or ""
+                ).strip()
+                # 从原文中移除翻译，保持回复干净
+                original_text = original_text.replace(translation_match.group(0), "", 1)
 
         # 更新 LLM 回复文本为净化后的文本 (去除标签和翻译部分)
         resp.completion_text = original_text.strip()
@@ -656,5 +661,6 @@ class LlmTtsPlugin(Star):
         if self._keepalive_task:
             await asyncio.gather(self._keepalive_task, return_exceptions=True)
 
+        await self.tts_engine.terminate()
         await self.http_client.aclose()
         logger.info("LLM TTS 插件已卸载，HTTP客户端已关闭。")
