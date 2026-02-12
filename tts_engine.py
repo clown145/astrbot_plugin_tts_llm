@@ -5,7 +5,7 @@ import uuid
 import wave
 import time
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Optional, Dict
 
 import httpx
 from astrbot.api import logger, AstrBotConfig
@@ -47,6 +47,9 @@ class TTSEngine:
 
         # 启动清理任务
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+        # 全局 FIFO 请求队列：严格先到先得
+        self._request_queue = asyncio.Queue()
+        self._request_worker_task = asyncio.create_task(self._request_worker_loop())
 
     def _clean_text_for_tts(self, text: str) -> str:
         cleaned = text
@@ -92,8 +95,50 @@ class TTSEngine:
             except Exception as e:
                 logger.error(f"清理任务发生错误: {e}")
 
+    async def _request_worker_loop(self):
+        """全局请求调度器：严格按 FIFO 处理整单合成请求。"""
+        while True:
+            try:
+                request, result_future = await self._request_queue.get()
+            except asyncio.CancelledError:
+                break
+
+            if result_future.cancelled():
+                logger.info(
+                    f"[{request.get('session_id_for_log', 'unknown')}] 请求已取消，跳过合成。"
+                )
+                self._request_queue.task_done()
+                continue
+
+            try:
+                result = await self._synthesize_direct(**request)
+                if not result_future.done():
+                    result_future.set_result(result)
+            except asyncio.CancelledError:
+                if not result_future.done():
+                    result_future.set_result(None)
+                raise
+            except Exception as e:
+                logger.error(f"[{request.get('session_id_for_log', 'unknown')}] 请求处理异常: {e}")
+                if not result_future.done():
+                    result_future.set_result(None)
+            finally:
+                self._request_queue.task_done()
+
     async def terminate(self):
         """在插件卸载时停止后台清理任务。"""
+        if self._request_worker_task:
+            self._request_worker_task.cancel()
+            await asyncio.gather(self._request_worker_task, return_exceptions=True)
+            while not self._request_queue.empty():
+                try:
+                    _, result_future = self._request_queue.get_nowait()
+                    if not result_future.done():
+                        result_future.set_result(None)
+                    self._request_queue.task_done()
+                except asyncio.QueueEmpty:
+                    break
+
         if self._cleanup_task:
             self._cleanup_task.cancel()
             await asyncio.gather(self._cleanup_task, return_exceptions=True)
@@ -320,7 +365,7 @@ class TTSEngine:
 
             task_queue.task_done()
 
-    async def synthesize(
+    async def _synthesize_direct(
         self,
         character_name: str,
         ref_audio_path: str,
@@ -329,7 +374,7 @@ class TTSEngine:
         session_id_for_log: str,
         language: str = None,
     ) -> Optional[str]:
-        """执行语音合成的核心入口点，支持并发处理。使用全局锁确保先到先得。"""
+        """执行单个请求的合成逻辑。由全局队列调度器按 FIFO 调用。"""
 
         # 全局锁确保语音请求按顺序处理，先请求的先完成
         async with self._synthesis_lock:
@@ -362,8 +407,8 @@ class TTSEngine:
 
                     results_list = [None] * len(text_chunks)
                     retry_counts = {}  # 跟踪每个块的重试次数
-                    # Worker数量等于块数，让每个块有专属worker，服务器锁会自然调度执行顺序
-                    num_workers = len(text_chunks)
+                    # Worker 数量不超过服务器数量，避免长文本时创建过多空转协程
+                    num_workers = min(len(text_chunks), len(servers))
                     workers = [
                         asyncio.create_task(
                             self._synthesis_worker(
@@ -434,3 +479,29 @@ class TTSEngine:
 
             logger.error(f"[{session_id_for_log}] 尝试所有TTS服务器后合成失败。")
             return None
+
+    async def synthesize(
+        self,
+        character_name: str,
+        ref_audio_path: str,
+        ref_audio_text: str,
+        text: str,
+        session_id_for_log: str,
+        language: str = None,
+    ) -> Optional[str]:
+        """将请求放入全局 FIFO 队列，严格先到先得。"""
+        loop = asyncio.get_running_loop()
+        result_future = loop.create_future()
+        request = {
+            "character_name": character_name,
+            "ref_audio_path": ref_audio_path,
+            "ref_audio_text": ref_audio_text,
+            "text": text,
+            "session_id_for_log": session_id_for_log,
+            "language": language,
+        }
+        await self._request_queue.put((request, result_future))
+        logger.info(
+            f"[{session_id_for_log}] 已进入TTS队列，等待中（当前队列长度: {self._request_queue.qsize()}）"
+        )
+        return await result_future

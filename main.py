@@ -20,7 +20,7 @@ from .external_apis import translate_text
     "astrbot_plugin_tts_llm",
     "clown145",
     "一个通过LLM、翻译和TTS实现语音合成的插件",
-    "1.3.5",
+    "1.3.6",
     "https://github.com/clown145/astrbot_plugin_tts_llm",
 )
 class LlmTtsPlugin(Star):
