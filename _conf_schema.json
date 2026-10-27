@@ -63,6 +63,23 @@
     "type": "bool",
     "default": true
   },
+  "tts_trigger_probability": {
+    "title": "🎲 TTS 触发概率",
+    "description": "每次自动语音回复按该概率决定是否合成。1.0 = 每条都合成，0.5 ≈ 一半回复带语音，0 = 全部只发文字。不影响 /合成 指令。",
+    "type": "float",
+    "default": 1.0,
+    "slider": {
+      "min": 0,
+      "max": 1,
+      "step": 0.05
+    }
+  },
+  "tts_max_text_length": {
+    "title": "📏 超过该字数则跳过 TTS",
+    "description": "LLM 回复（去除情感/翻译标签后）的可见字符数超过该值时，只发文字不合成语音。0 表示不限制。",
+    "type": "int",
+    "default": 0
+  },
   "enable_tts_text_cleaning": {
     "title": "启用 TTS 文本清洗",
     "description": "在请求 TTS 前按正则清洗文本（例如去掉括号内容）。",

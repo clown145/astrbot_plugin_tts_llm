@@ -1,6 +1,7 @@
 import asyncio
 import httpx
 import os
+import random
 import re
 from typing import Dict, Optional, Set
 
@@ -20,7 +21,7 @@ from .external_apis import translate_text
     "astrbot_plugin_tts_llm",
     "clown145",
     "一个通过LLM、翻译和TTS实现语音合成的插件",
-    "1.3.7",
+    "1.3.9",
     "https://github.com/clown145/astrbot_plugin_tts_llm",
 )
 class LlmTtsPlugin(Star):
@@ -82,6 +83,43 @@ class LlmTtsPlugin(Star):
         return bool(self.config.get("enable_group_tts_by_default", False)) or (
             group_id in self.active_groups
         )
+
+    def _should_trigger_tts(self, text: str) -> bool:
+        """判断本次回复是否需要进行语音合成（字数上限 + 概率抽签）。
+
+        只在文本已完成标签清洗后调用，确保统计的是用户实际看到的正文。
+        """
+        max_length = self.config.get("tts_max_text_length", 0)
+        try:
+            max_length = int(max_length)
+        except (TypeError, ValueError):
+            max_length = 0
+
+        visible_text = re.sub(r"\s+", "", text or "")
+        if max_length > 0 and len(visible_text) > max_length:
+            logger.info(
+                f"回复共 {len(visible_text)} 字，超过配置上限 {max_length}，本次跳过语音合成。"
+            )
+            return False
+
+        probability = self.config.get("tts_trigger_probability", 1.0)
+        try:
+            probability = float(probability)
+        except (TypeError, ValueError):
+            probability = 1.0
+        probability = min(max(probability, 0.0), 1.0)
+
+        if probability >= 1.0:
+            return True
+        if probability <= 0.0:
+            logger.info("TTS 触发概率为 0，本次跳过语音合成。")
+            return False
+
+        triggered = random.random() < probability
+        logger.info(
+            f"TTS 概率抽签: p={probability:.2f} -> {'合成' if triggered else '跳过'}"
+        )
+        return triggered
 
     def _get_keepalive_urls(self) -> list[str]:
         """获取所有需要保活的目标地址。包括配置的TTS服务器和额外的保活地址。"""
@@ -532,6 +570,11 @@ class LlmTtsPlugin(Star):
         # 注意：这里假设 result_chain 第一个是 Plain。如果不是，可能需要遍历。
         # 简单起见，我们重建 chain
         resp.result_chain.chain = [Comp.Plain(resp.completion_text)]
+
+        # --- TTS 触发判定（字数上限 / 概率）---
+        # 放在标签清洗之后：既不把标签漏给用户，也避免白跑翻译和合成。
+        if not self._should_trigger_tts(resp.completion_text):
+            return
 
         # --- 开始 TTS 处理流程 ---
 
